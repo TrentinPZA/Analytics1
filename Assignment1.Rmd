@@ -1,0 +1,1469 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+classoption: notitlepage
+geometry: "left=1in,right=1in,top=0.5in,bottom=0.5in"
+header-includes:
+  - "\\usepackage{graphicx}"
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{=tex}
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    \includegraphics[width=0.6\textwidth]{UCT_Logo.jpg}\par
+    \vspace{1cm}
+    {\LARGE\bfseries Analytics, Assignment 1\par}
+    \vspace{0.5cm}  
+    \hrule  % 
+    \vspace{0.5cm}  
+    {\Large Author(s): 
+    \begin{tabular}{ll}
+      Petersen Trentin (PTRTRE004)\\ Stevenson Daniela (STVDAN011)
+    \end{tabular}
+    \par}
+    \vfill
+    {\large \today\par}
+\end{titlepage}
+```
+```{r setup, include=FALSE,message=FALSE,warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE,cache = T)
+```
+
+## Question 1
+
+### (a)
+
+```{r 1a,echo=FALSE,warning=FALSE,message=FALSE,fig.cap="Overfitted tree fitted to Q1dat (Model1)."}
+library(tidyr)
+library(dplyr)
+library(tree)
+library(knitr)
+
+
+q1dat<-read.csv("Q1dat.csv")
+
+set.seed(321)
+#Splitting data into training and test data
+q1_train <- q1dat|>sample_frac(0.8,replace=FALSE)
+q1_test <- q1dat|>anti_join(q1_train)
+q1_train$quality<-as.factor(q1_train$quality)
+
+
+#Fitting a full model
+control_params<-tree.control(nobs=1000,minsize=2,mindev = 0)
+vanilla_mielies <-tree(quality~.,data=q1_train,control = control_params)
+par(mar = c(2,2,2,2))
+{plot(vanilla_mielies)
+text(vanilla_mielies,cex=0.5)}
+
+
+
+predictions <- predict(vanilla_mielies,newdata = q1_test,type="class")
+
+y_test_quality <- q1_test[,6]
+
+misclass_rate<- sum(predictions!=y_test_quality)/length(y_test_quality)
+
+
+
+```
+
+Firstly, the 'Q1dat' dataset was split into an 80/20 train/test split.
+Figure 1 displays the overfitted classification tree that was fit to the training data, call it Model 1.
+This tree has a very high complexity, with 41 terminal nodes.
+Furthermore if we look at the frame component of the tree object we can observe what variables were used to determine where the splits were performed in the tree.
+The latitude and longitude variables were observed to be of the most importance when determining the splits.
+The variables: Pests, Counts and Height can therefore be deemed of little importance when building a tree to determine the final mealie quality.
+
+Most notably, each node of this overfitted tree was homogeneous.
+This means there were only (n) observations of one class (A,B,C or D) in each node.
+This was achieved through removing the stopping criterion, which was done by setting the 'tree.control' parameters $minsize$ and $mindev$ equal to 2 and 0 respectively.
+This means only 2 observations were required to be in a node for a split to be performed.
+Additionally, no reduction in the deviance was required for a split to be performed, hence everything was so clustered as the change in deviance was proportional to the branch length.
+Therefore, splits were only allowed to occur until either a terminal node holds a single observation or multiple observations of the same class.
+
+The homogeneity of the terminal nodes was also validated by extracting the leaves/terminal nodes from the frame of the tree object, extracting a matrix of the different probabilities of each class within each node, and checking if that matrix only included 0's and 1's (which implies that each node only holds one class and is homogeneous).
+The code for this can be found in (1) of the appendix.
+
+```{=tex}
+\begin{center}
+Model 1 Testing Misclassification Rate = $`r misclass_rate`$
+\end{center}
+\newpage
+```
+### (b)
+
+```{r 1b,echo=FALSE,warning=FALSE,message=FALSE,fig.height=3,fig.cap="Cross-validated pruning results on the overfitted tree fitted to Q1dat."}
+cv_res<-cv.tree(vanilla_mielies, FUN = prune.misclass)
+par(mar = c(4,4,2,2))
+{plot(cv_res$size, cv_res$dev, type = 'o',
+     pch = 16, col = 'navy', lwd = 2,
+     xlab = 'Number of terminal nodes', ylab='CV error')
+
+
+T <- cv_res$size[which.min(cv_res$dev)] #The minimum CV Error
+abline(v = T, lty = 2, lwd = 2, col = 'red')
+
+stdDev<-sd(cv_res$dev)
+One_se<-min(cv_res$dev)+stdDev
+One_se_ind<-max(which(cv_res$dev==min(cv_res$dev)+stdDev))
+abline(h = One_se, lty = 2, lwd = 2, col = 'green')
+
+
+}
+pruned_vanilla<-prune.tree(vanilla_mielies,best=cv_res$size[which.min(cv_res$dev)],method = 'misclass')
+# {plot(pruned_vanilla)
+# text(pruned_vanilla)}
+
+test_predictions <- predict(pruned_vanilla,newdata = q1_test,type="class")
+train_predictions <- predict(pruned_vanilla,newdata = q1_train,type="class")
+
+
+q2_test_misclass_rate<- sum(test_predictions!=q1_test[,6])/length(q1_test[,6])
+q2_train_misclass_rate<- sum(train_predictions!=q1_train[,6])/length(q1_train[,6])
+
+
+```
+
+Figure 2 indicates the size of the tree corresponding to one standard error above the mean (green, horizontal) is very small with a relatively large CV error.
+Therefore, in this context it seems more logical to choose a tree size that corresponds to the minimum CV error, which in this case is a tree with 17 terminal nodes, call it Model 2.
+The overfitted tree pruned to 17 terminal nodes gives us:
+
+```{r 1b table of errors,echo=FALSE,warning=FALSE,message=FALSE}
+errors_1b<-matrix(c(q2_train_misclass_rate,q2_test_misclass_rate),nrow=1,ncol=2,byrow=T)
+kable(errors_1b,col.names = c("Model 2 Train","Model 2 Test"),caption = "Misclassification Rates of Models 1-2.")
+```
+
+Table 1 shows the overfitted tree pruned to 17 terminal nodes having a testing misclassification rate which is higher than both its training misclassification rate and Model 1's testing misclassification rate.
+
+Thorugh greater observation, it was found that as the tree was pruned less (the size of the pruned model approached the size of the overfitted model) the testing misclassification rate decreased.
+This may have been as a result of the pruned model underfitting to the data, which may have very complex underlying patterns which are better picked up by the overfitted model leading to the pruned model performing worse than the overfitted model.
+\newpage
+
+### (c)
+
+```{r 1c_OrigData,echo=FALSE,warning=FALSE,message=FALSE,fig.width=5,fig.height=3,fig.cap="Plot of the quality of mealie against location data (latitude and longitude)."}
+par(mar = c(4,4,2,2))
+{plot(q1dat$longitude,q1dat$latitude,type="p",col=factor(q1dat$quality),pch=19, xlab = "Longitude",ylab="Latitude")
+
+legend("topright",title = "Quality",
+       legend = levels(factor(q1dat$quality)),
+       pch = 19,
+       col = factor(levels(factor(q1dat$quality))))
+}
+```
+
+```{r 1c_Theta,echo=FALSE,warning=FALSE,message=FALSE,fig.width=5,fig.height=3,fig.cap="MSE for 10-Fold CV against theta."}
+
+thetas=seq(0, pi/2, by = 0.01*pi)
+
+k=10
+
+cv_errors<-matrix(nrow=k,ncol=length(thetas))
+folds<-cut(1:nrow(q1_train),breaks=k,labels=F) 
+
+
+for (fold in 1:k){ #Looping over the folds
+    
+    traindat<-q1_train[folds!=fold,] #Assigning training data for fold
+    validdat<-q1_train[folds==fold,]#Assigning testing data for fold
+    #Dont worry about these 2 lines
+    traindat_rot<-traindat
+    validdat_rot<-validdat
+    
+    i=1
+    suppressWarnings(
+      
+      
+    for (theta in seq(0, pi/2, by = 0.01*pi)){
+      #Doing rotation
+    traindat_rot[,1]<- traindat$longitude*cos(theta)-traindat$latitude*sin(theta) 
+    traindat_rot[,2]<-traindat$longitude*sin(theta)+traindat$latitude*cos(theta)
+    validdat_rot[,1]<- validdat$longitude*cos(theta)-validdat$latitude*sin(theta) 
+    validdat_rot[,2]<-validdat$longitude*sin(theta)+validdat$latitude*cos(theta)
+    
+    #Fitting and pruning tree
+    theta_tree <- tree(quality~.,data=traindat_rot)
+    pruned_theta_tree<-prune.tree(theta_tree,best=4,method = 'misclass')
+    
+    #Prediction on tree
+    predictions <- predict(pruned_theta_tree,newdata = validdat_rot,type="class")
+    cv_misclass_rate<- sum(predictions!=validdat_rot$quality)/length(validdat_rot$quality)
+    
+    cv_errors[fold,i]<-cv_misclass_rate
+    i<-i+1
+    
+    })
+
+    
+}
+mean_cv_errors<-colMeans(cv_errors)
+par(mar = c(4,4,2,2))
+{plot(thetas,mean_cv_errors,type="l",col="red",xlab=expression(theta),ylab="Mean CV Errors") 
+  abline(v=thetas[which.min(mean_cv_errors)],lty = 2, lwd = 2, col = 'green')
+  points(x = thetas[which.min(mean_cv_errors)],y=min(mean_cv_errors),col="red",type="o",pch=19)
+  text(x = thetas[which.min(mean_cv_errors)]+0.1, y = -0.01, labels = as.character(round(thetas[which.min(mean_cv_errors)],3)), pos = 3, offset = 1, col = 'black')}
+best_theta<-thetas[which.min(mean_cv_errors)]
+rounded_theta<-round(best_theta,3)
+
+```
+
+The theta value used to rotate the latitude and longitude data that resulted in the lowest cross-validated error, as seen in Figure 4 was: $$\theta = `r rounded_theta`$$ \newpage
+
+```{r 1c_RotDat,echo=FALSE,warning=FALSE,fig.width=5,fig.height=3,message=FALSE,fig.cap="Plot of the quality of mealie against rotated location data (latitude and longitude)."}
+#Rotate data with best theta
+rot_q1dat<-q1_train
+rot_q1_test<-q1_test
+rot_q1dat[,1]<-q1_train$longitude*cos(best_theta)-q1_train$latitude*sin(best_theta)
+rot_q1dat[,2]<-q1_train$longitude*sin(best_theta)+q1_train$latitude*cos(best_theta)
+
+rot_q1_test[,1]<-q1_test$longitude*cos(best_theta)-q1_test$latitude*sin(best_theta)
+rot_q1_test[,2]<-q1_test$longitude*sin(best_theta)+q1_test$latitude*cos(best_theta)
+par(mar = c(4,4,2,2))
+{plot(rot_q1dat$longitude,rot_q1dat$latitude,type="p",col=factor(rot_q1dat$quality),pch=19, xlab = "Longitude",ylab="Latitude")
+
+legend("topright",title = "Quality",
+       legend = levels(factor(rot_q1dat$quality)),
+       pch = 19,
+       col = factor(levels(factor(rot_q1dat$quality))))
+}
+```
+
+$\theta = `r rounded_theta`$ was then used to rotate the latitude and longitude components of the data such that the decision boundaries were orthogonal to the axes as shown above in Figure 5.
+
+```{r 1c_NewModel,fig.width=5,fig.height=3,echo=FALSE,warning=FALSE,message=FALSE,fig.cap="Tree fitted to Q1dat with the location data rotated and then pruned (Model 3)."}
+
+
+
+
+#Fit tree to it
+colnames(rot_q1dat)=c("Rotated_Longitude","Rotated_Latitude","count","pests","height","quality")
+colnames(rot_q1_test)=c("Rotated_Longitude","Rotated_Latitude","count","pests","height","quality")
+
+rot_tree<-tree(quality~.,data=rot_q1dat)
+pruned_rot_tree<-prune.tree(rot_tree,best=4,method = 'misclass')
+rot_test_predictions <- predict(pruned_rot_tree,newdata = rot_q1_test,type="class")
+rot_misclass_rate<- sum(rot_test_predictions!=rot_q1_test$quality)/length(rot_q1_test$quality)
+par(mar = c(2,2,2,2))
+{plot(pruned_rot_tree)
+text(pruned_rot_tree)}
+
+
+
+
+```
+
+Figure 6 shows the tree that was fitted to the rotated data and then pruned to have 7 nodes (4 terminal nodes and 3 internal nodes including the root node) and a depth of 2, call it Model 3.
+Once again, when inspecting the frame of the tree object, only the Latitude and Longitude variables were used to create splits.
+Thus, like in the overfitted tree, the other predictor variables were redundant in the determining of splits.
+
+```{r 1c error table,echo=FALSE,message=FALSE,warning=FALSE}
+errors_1c<-matrix(c(misclass_rate,q2_test_misclass_rate,rot_misclass_rate),nrow=1,ncol=3,byrow=T)
+kable(errors_1c,col.names = c("Model 1","Model 2","Model 3"),caption = "Testing Misclassification Rates of Models 1-3.")
+```
+
+The testing misclassification error for Model 3 was lower than the testing misclassification error for both Model 1 and Model 2.
+So even though Model 3 only has 4 terminal nodes, with a depth of 2, it does an excellent job at predicting on the test data; provided that a rotation of $\theta=`r rounded_theta`$ is applied to the latitude and longitude variables in the data with which it is using to make predictions.
+This makes sense as we can split the rotated data near perfectly into four quadrants, representing the four different quality classes.
+
+## Question 2
+
+### (a)
+
+```{r Q2a Testing lambda.min vs lambda.1se,echo=FALSE,warning=FALSE,message=FALSE}
+lambdaTypes<-c("lambda.min","lambda.1se")
+ind<-1
+lambdaTypeMeans<-matrix(nrow=10,ncol=2)
+
+  library(glmnet)
+  library(knitr)
+  library(dplyr)
+  library(caret)
+  library(ROCR)
+  library(pROC)
+
+  for (j in 1:10){
+   
+    set.seed(123+j)
+    q2dat<-read.csv("Q2dat.csv")
+    q2dat<-q2dat[,-1]#Removing match ID
+
+    #Making chr to factor vars
+    q2dat$Defending.Team<-as.factor(q2dat$Defending.Team)
+    q2dat$Chasing.Team<-as.factor(q2dat$Chasing.Team)
+    q2dat$Defending.Stadium<-as.factor(q2dat$Defending.Stadium)
+    q2dat$Time<-as.factor(q2dat$Time)
+    q2dat$Defending.Toss<-as.factor(q2dat$Defending.Toss)
+    q2dat[,7:14]<-scale(q2dat[,7:14]) #Scaling the numerical variables
+    q2dat<-q2dat[,c(-2,-3)]
+
+    q2_train <- q2dat|>sample_frac(0.8,replace=FALSE)
+    q2_test <- q2dat|>anti_join(q2_train)
+
+
+
+
+
+    #######Elastic Net#######
+    x_train_dummies<-makeX(q2_train[,-1])#Making dummy vars
+    x_test_dummies<-makeX(q2_test[,-1])
+    y_train<-q2_train[,1]
+
+
+    k=9 #Using 9 folds because we have 594 obs in training data so can split it into 9 folds of 66 obs each
+    folds<-sample(cut(1:nrow(x_train_dummies),breaks=k,labels=F))      #Using foldid=folds to make sure that the same folds are used in each CV
+    cvmodel<-cv.glmnet(x_train_dummies,y_train,alpha=0.5,family="binomial", type.measure = "class", foldid = folds)
+
+    #{plot(cvmodel);abline(h=cvmodel$cvm[which(cvmodel$cvm==min(cvmodel$cvm))],lty = 2, col = 'blue')}
+
+    for(k in 1:length(lambdaTypes)){
+       lambdaType<-lambdaTypes[k]
+
+    round(coef(cvmodel,s=lambdaType),3)
+    pred_enet<-predict(cvmodel,x_test_dummies,s=lambdaType,type='response')[,1]
+
+    pred_enet<-ifelse(pred_enet>=0.5,1,0)
+    pred_enet<-as.factor(pred_enet)
+
+
+    caretmat<-confusionMatrix(as.factor(pred_enet),as.factor(q2_test[,1]),positive="1")
+    lambdaTypeMeans[j,k]<-caretmat$overall[1]
+
+    caretmat$overall[1]
+  }
+
+  }
+lamMeans<-colMeans(lambdaTypeMeans)
+lamMeans<-matrix(round(lamMeans,3),nrow=1,ncol=2)
+
+```
+
+Initially, testing was done to determine whether to use the lambda which yielded the minimum cross-validation error (lambda.min), or to use the lambda which lies one standard error above the minimum cross-validation error (lambda.1se).
+This was done by keeping $\alpha=0.5$ and calculating the test accuracy for the model using both lambda.min and lambda.1se for 10 different seeds, giving us 10 different test accuracy measurements.
+The test accuracy measurements were then aggregated, producing the values seen in Table 3 below.
+
+The difference in the test accuracy of a model using 'lambda.1se' to a model using 'lambda.min' is negligible, therefore, it makes sense to choose the lambda value which will yield a model with a lower complexity, which will be lambda.1se.
+
+```{r,echo=FALSE}
+rownames(lamMeans)<-"Test Accuracy"
+kable(lamMeans,col.names = c("Lambda Min","Lambda 1se"),caption = "Test Accuracy of Elastic-Net Classification Model using Lambda.min/Lambda.1se.")
+```
+
+```{r Q2a comparing including vs excluding the team variables,echo=FALSE,warning=FALSE,message=FALSE}
+#   InclExclMeans<-matrix(nrow=10,ncol=2)
+# library(glmnet)
+#   library(knitr)
+#   library(dplyr)
+#   library(caret)
+#   library(ROCR)
+#   library(pROC)
+#   for (j in 1:10){
+#     
+#     set.seed(1234+j)
+#     q2dat<-read.csv("Q2dat.csv")
+#     q2dat<-q2dat[,-1]#Removing match ID
+# 
+#     #Making chr to factor vars
+#     q2dat$Defending.Team<-as.factor(q2dat$Defending.Team)
+#     q2dat$Chasing.Team<-as.factor(q2dat$Chasing.Team)
+#     q2dat$Defending.Stadium<-as.factor(q2dat$Defending.Stadium)
+#     q2dat$Time<-as.factor(q2dat$Time)
+#     q2dat$Defending.Toss<-as.factor(q2dat$Defending.Toss)
+#     q2dat[,7:14]<-scale(q2dat[,7:14]) #Scaling the numerical variables
+#     VarSelect<-list(q2dat,q2dat[,c(-2,-3)])
+# 
+#     for(p in 1:length(VarSelect)){
+#        q2dat<-VarSelect[[p]]
+# 
+# 
+#       q2_train <- q2dat|>sample_frac(0.8,replace=FALSE)
+#       q2_test <- q2dat|>anti_join(q2_train)
+# 
+# 
+# 
+# 
+# 
+#       #######Elastic Net#######
+#       x_train_dummies<-makeX(q2_train[,-1])#Making dummy vars
+#       x_test_dummies<-makeX(q2_test[,-1])
+#       k=9
+#       folds<-sample(cut(1:nrow(x_train_dummies),breaks=k,labels=F))
+#       y_train<-q2_train[,1]
+#       alpha_values <- seq(0, 1, by=0.01)
+#       alpha_values
+#       lambdas<-seq(0, 4, by=1)
+#       min_cv_error<-Inf
+#       best_alpha=0
+#       for(alpha in alpha_values){
+# 
+# 
+#       cvmodel<-cv.glmnet(x_train_dummies,y_train,alpha=alpha,family="binomial",type.measure = "class", foldid = folds)
+# 
+#       if (min(cvmodel$cvm)<min_cv_error)
+#       {min_cv_error<-min(cvmodel$cvm)
+#         best_alpha<-alpha
+#         }
+#       }
+# 
+# 
+# 
+#       cvmodel<-cv.glmnet(x_train_dummies,y_train,alpha=best_alpha,family="binomial", type.measure = "class", foldid = folds)
+# 
+#       pred_enet<-predict(cvmodel,x_test_dummies,s="lambda.1se",type='response')[,1]
+#       pred_enet<-ifelse(pred_enet>=0.5,1,0)
+#       pred_enet<-as.factor(pred_enet)
+# 
+# 
+#       caretmat<-confusionMatrix(as.factor(pred_enet),as.factor(q2_test[,1]),positive="1")
+#       InclExclMeans[j,p]<-caretmat$overall[1]
+# 
+#       caretmat$overall[1]
+#   }
+# 
+#   }
+# InclExclMeans<-colMeans(InclExclMeans)
+# InclExclMeans<-matrix(c(InclExclMeans),nrow=1,ncol=2,byrow=T)
+# saveRDS(InclExclMeans,file='C:/Users/Trentinio/OneDrive - University of Cape Town/1_POSTGRAD/Analytics/Ass1/InclExclMeans.rds')
+#InclExclMeans<-readRDS('C:/Users/Trentinio/OneDrive - University of Cape Town/1_POSTGRAD/Analytics/Ass1/InclExclMeans.rds')
+InclExclMeans <- readRDS("InclExclMeans.rds")
+
+```
+
+Additionally, the decision to remove the variables 'Defending.Team' and 'Chasing.Team' was made.
+This was determined in a similar manner to the lambda value situation.
+The out-of-sample accuracy was calculated 10 times using 10 different seeds and then averaged for 2 different models.
+
+Two models were fit, one including the two aforementioned variables and another model not containing the two variables.
+Table 4 shows that the difference in test accuracy is negligible.
+This means the obvious choice is that of the simpler model, i.e. the model excluding the 'Defending.Team' and 'Chasing.Team' variables as our final model.
+
+```{r,echo=FALSE}
+InclExclMeans <- readRDS("InclExclMeans.rds")
+
+InclExclMeans<-round(InclExclMeans,3)
+rownames(InclExclMeans)<-"Test Accuracy"
+kable(InclExclMeans,col.names = c("Include Teams","Exclude Teams"),caption = "Test Accuracy of the models Including/Excluding the Defending.Team and Chasing.Team variables.")
+```
+
+Moreover, another reason to exclude the 'Defending.Team' and 'Chasing.Team' variables was the volatile nature of sports teams where player compositions change frequently.
+The data of the 743 matches comes from several iterations of the annual IPL tournament, so it is almost guaranteed that the players in each team were not always the same across different matches.
+Therefore, using them to predict future outcomes is meaningless, as year to year the experience and skill levels in a team shift.
+This means that even though they play under the same team name as before, it does not implicitly suggest that that the team's performance will remain consistent in following years.
+
+```{r Q2a comparing using custom lambdas or default,echo=FALSE,warning=FALSE,message=FALSE}
+
+library(glmnet)
+  library(knitr)
+  library(dplyr)
+  library(caret)
+  library(ROCR)
+  library(pROC)
+    set.seed(123)
+    q2dat<-read.csv("Q2dat.csv")
+    q2dat<-q2dat[,-1]#Removing match ID
+
+    #Making chr to factor vars
+    q2dat$Defending.Team<-as.factor(q2dat$Defending.Team)
+    q2dat$Chasing.Team<-as.factor(q2dat$Chasing.Team)
+    q2dat$Defending.Stadium<-as.factor(q2dat$Defending.Stadium)
+    q2dat$Time<-as.factor(q2dat$Time)
+    q2dat$Defending.Toss<-as.factor(q2dat$Defending.Toss)
+    q2dat[,7:14]<-scale(q2dat[,7:14]) #Scaling the numerical variables
+    q2dat<-q2dat[,c(-2,-3)]
+
+
+
+
+      q2_train <- q2dat|>sample_frac(0.8,replace=FALSE)
+      q2_test <- q2dat|>anti_join(q2_train)
+
+
+
+
+
+      #######Elastic Net#######
+      x_train_dummies<-makeX(q2_train[,-1])#Making dummy vars
+      x_test_dummies<-makeX(q2_test[,-1])
+      k=9
+      folds<-sample(cut(1:nrow(x_train_dummies),breaks=k,labels=F))
+      y_train<-q2_train[,1]
+      lambdas<-10^(seq(-4, 0, by=0.01))
+
+
+
+
+      cvmodel_defaultLams<-cv.glmnet(x_train_dummies,y_train,alpha=0.5,family="binomial", type.measure = "class", foldid = folds)
+
+      cvmodel_customLams<-cv.glmnet(x_train_dummies,y_train,alpha=0.5,lambda = lambdas,family="binomial", type.measure = "class", foldid = folds)
+
+      coefs_defaultLams<- round(coef(cvmodel_defaultLams,s="lambda.1se"),3)
+
+      pred_enet_defaultLams<-predict(cvmodel_defaultLams,x_test_dummies,s="lambda.1se",type='response')[,1]
+
+      coefs_customLams<- round(coef(cvmodel_customLams,s="lambda.1se"),3)
+      
+      pred_enet_customLams<-predict(cvmodel_customLams,x_test_dummies,s="lambda.1se",type='response')[,1]
+      par(mfrow=c(1,2))
+      # {plot(cvmodel_customLams)
+      # plot(cvmodel_defaultLams)}
+
+      alpha_values <- seq(0, 1, by=0.01)
+      min_cv_error<-Inf
+      best_alpha=0
+      for(alpha in alpha_values){
+
+
+      cvmodel<-cv.glmnet(x_train_dummies,y_train,alpha=alpha,lambda = lambdas,family="binomial", type.measure = "class", foldid = folds)
+
+      if (min(cvmodel$cvm)<min_cv_error)
+      {min_cv_error<-min(cvmodel$cvm)
+        best_alpha<-alpha
+        }
+      }
+
+       cv_finalmodel<-cv.glmnet(x_train_dummies,y_train,alpha=best_alpha,lambda = lambdas,family="binomial", type.measure = "class", foldid = folds)
+   
+      best_lambda<-round(cv_finalmodel$lambda.1se,2)
+      finalmodel_coefs<- as.data.frame(as.matrix(round(coef(cv_finalmodel,s="lambda.1se"),3)))
+      pred_enet<-predict(cv_finalmodel,x_test_dummies,s="lambda.1se",type='response')[,1]
+      pred_enet<-ifelse(pred_enet>=0.5,1,0)
+      pred_enet<-as.factor(pred_enet)
+
+      caretmat<-confusionMatrix(as.factor(pred_enet),as.factor(q2_test[,1]),positive="1")
+      metrics<-matrix(c(caretmat$overall[1],caretmat$byClass[7]),nrow=1,ncol=2)
+      
+     
+      
+```
+
+A custom range of $\lambda$ was used as it allowed for the granularity of the $\lambda$ to be more finely controlled.
+The range used was: $10^{-4}\leq\lambda\leq1$ as any $\lambda>1$ suggested that an empty model be used with a higher relative cv-error.
+
+After the range of $\lambda$ was determined a sequence of alpha values, $0\leq\alpha\leq1$ , was iterated over, each time performing 9-Fold cross-validation to obtain a cross-validation misclassification error for the model.
+The lowest misclassification error and its corresponding $\alpha$ value were stored.
+This is how the optimal $\alpha$ value was determined as it, in combination with the range of $\lambda$, produced the model with the lowest misclassification rate.\
+\newpage The parameters used in the regularisation for the final model: $$\alpha=`r best_alpha` \quad and \quad \lambda=`r best_lambda` $$ Which resulted in the the final model with the coefficients shown in Table 5 below.
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+
+#finalmodel_coefs <- cbind(finalmodel_coefs , ncol = 2)
+kable(finalmodel_coefs, col.names = c("estimate"),caption="Elastic-net logistic regression model fitted to Q2dat.")
+
+```
+
+The final model equation can be written as follows: $$logit(Defending.Result)=-0.225+0.336*First.Inn.Score \qquad \qquad \qquad (eqn. 1)$$
+
+From equation 1, the log odds of the defending team winning after the first innings is $-0.225$ when $First.Inn.Score = 0$.
+It is also shown that a one unit increase in $First.Inn.Score$ will lead to a $0.336$ increase in the log odds of the defending team winning after the first innings.
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+out = round(exp(finalmodel_coefs),3)
+out = data.frame(
+  Coefficient = c("(Intercept)","First.Inn.Score"),
+  Odds_Effects = out[c(1,11),]
+)
+kable(out,col.names = c("Coefficient","$e^{B_j}$"),caption="Odds effects for the final elastic-net logistic regression model fitted to Q2dat.")
+```
+
+This can also be interpreted as the odds of the defending team winning after the first innings being $e^{-0.255}=0.799$ when the $First.Inn.Score = 0$.
+And for a one unit increase in the $First.Inn.Score$ the odds of the defending team winning after the first innings will change by a factor of $e^{0.336}$.
+This is represented by Table 6 above.
+
+Approaching this from a cricket point of view, it makes sense that the $First.Inn.Score$ was the most important predictor of whether or not the defending team will win, because if the team who bats first (the defending team) manages to put up a large score then the chasing team has a large score to chase.
+This could have a significant psychological impact, potentially impacting their performance and ability to match the first innings score and could increase the defending teams likelihood of winning in general.
+
+The testing accurracy and the $F_1$-score can be seen in Table 7 below.
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+ kable(round(metrics,3),col.names = c("Testing Accuracy","$F_1$-score"),caption = "Testing Accuracy and $F_1$-score for the final model using $\\alpha$ and $\\lambda$ from Table 5.")
+```
+
+### (b)
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.cap="ROC Curve for the final logistic regression model, regularised using an elastic-net approach."}
+
+   
+      pred_enet<-predict(cv_finalmodel,x_test_dummies,s="lambda.1se",type='response')[,1]
+      pred_for_roc<-prediction(pred_enet,q2_test[,1])
+      auc<-round(performance(pred_for_roc,measure="auc")@y.values[[1]],3)
+      perf<-performance(pred_for_roc,"tpr","fpr")
+
+      tpr <- perf@y.values[[1]]
+      fpr <- perf@x.values[[1]]
+      target_recall=0.75
+      index <- which(tpr >= target_recall)[1]
+      threshold <- c(pred_for_roc@cutoffs[[1]])[index]
+      rounded_threshold<-round(threshold,3)
+      
+      
+      
+      
+      par(mar = c(4,4,2,2))
+      {plot(perf)
+      points(fpr[index], tpr[index], col = "red", pch = 19)
+      text(fpr[index], tpr[index], label=round(threshold,3), pos = 4, col = "black")
+      lines(c(0,1), c(0,1), col = 'gray', lty = 4)}
+```
+
+The final model was used to predict outcomes using out-of-sample data, these predictions were then used to plot an ROC curve shown in Figure 6.
+The area under the ROC curve in Figure 6 was calculated to be $`r auc`$.
+
+The minimum decision rule threshold, $\tau$, that resulted in a recall of at least $0.75$ was then determined to be $`r rounded_threshold`$ as marked by the red point in Figure 6 above.
+
+This was validated by applying this $\tau$ decision rule to predictions made on the test data and then calculating the recall.
+This is demonstrated in the code and output provided in (2) of the appendix.
+
+\pagebreak
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+library(corrplot)
+library(ggplot2)
+library(ggcorrplot)
+
+q3data <- read.csv("Q3dat.csv")
+
+set.seed(321)
+
+#### EXPLORATORY ANALYSIS
+
+# #plot of dbn of target var - Total_UPDRS
+# ggplot(q3data, aes(x = total_UPDRS)) +
+#   geom_histogram(binwidth = 1, fill = "lightblue", color = "black") +
+#   theme_minimal() +
+#   ggtitle("Distribution of Total UPDRS Scores")
+
+
+```
+
+Question 3
+
+$$\underline{\textbf{Exploratory Analysis}}$$
+
+The data provided contains information pertaining to patients with early-stage Parkinson’s disease.
+There are eighteen explanatory variables, seventeen numeric and one binary (the sex of the patient - male/female).
+The goal of the exercise is to predict the UPDRS (response) through the use and implementation of various models.
+Before model implementation, an exploratory analysis will be conducted.
+\vspace{5mm}
+
+```{r cor_plot_data, echo = FALSE, message = FALSE, warning = FALSE, fig.height = 6, fig.width = 6, fig.cap="Heat Map Displaying the Correlation within the Parkinson's Disease Data"}
+# Theme for text size
+large_text <- theme(
+  axis.text.x = element_text(size = 9, angle = 45, vjust = 1, hjust = 1),
+  axis.text.y = element_text(size = 9)
+)
+
+cor_q3 <- round(cor(q3data),3)
+ggcorrplot(cor_q3, hc.order = FALSE, type = "lower", lab = TRUE,
+           lab_size = 2, 
+           title = "Correlation Matrix for Parkinson's Disease Data") + large_text
+```
+
+As seen in the correlation plot above, the Parkinson's Disease data contains variables that are highly correlated.
+Majority of the correlation coefficients have strong positive correlation coefficients (above $0.6$), with a large percentage very strong and above 0.8.
+Notably, two relationships present are perfectly positively correlated with a correlation coefficient of 1.
+These relationships are between the variables Shimmer.APQ3 and Shimmer.DDA, and Jitter.Rap and Jitter.DDP.
+
+The first step was splitting the data (80/20) into training and test data respectively.
+Each model was chosen based on their respective optimal hyperparameter selections.The comparison of each model was based on how well it predicts the UPDRS by evaluating their out-of-sample RMSE.
+Lower RMSE implies greater predicitve accuracy.
+\pagebreak
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+library(caret)
+library(glmnet)
+library(kableExtra)
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(broom)
+
+set.seed(321)  
+
+# Use models to predict the total UPDRS score:
+
+# 1) Linear model with variable selection/regularisation
+
+#split data into training and test 
+total_UPDRS <- q3data$total_UPDRS
+split <- createDataPartition(total_UPDRS, p = 0.8, list = FALSE)  
+train <- q3data[split, ] # 80% training
+test <- q3data[-split, ] # 20% test
+
+#TRAIN
+# remove the target var (y var: total_UPDRS - third column)
+y <- train[, 3]  #3rd column is target variable
+x <- train[, -3] 
+x_stand <- scale(x) #standardise for comparison
+train_stand <- data.frame(x_stand, total_UPDRS = y)
+
+#TEST
+# remove the target var (y var: total_UPDRS - third column)
+y_test <- test[, 3]  #3rd column is target variable
+x_test <- test[, -3] 
+x_stand_test <- scale(x_test) #standardise for comparison
+test_stand <- data.frame(x_stand_test, total_UPDRS = y_test)
+
+
+# Fit linear model using all features (vanilla)
+lm_full <- lm(total_UPDRS ~ ., data = train_stand)
+# lm_full |>
+#   tidy() |>
+#   kable(digits = 2, caption = 'Saturated linear model fitted to the Q3 dataset (features standardised)')
+
+yhat <- predict(lm_full,newx = x_stand_test)
+test_rmse_vanilla <- sqrt(mean((test_stand$total_UPDRS - yhat)^2))
+#print(test_rmse_vanilla)
+
+
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+library(glmnet)
+library(Metrics)
+library(caret)
+
+# L2 Regularisation - ridge
+
+library(glmnet)
+
+#10-fold CV to ridge - alpha = 0
+set.seed(123)
+ridge_cv <- cv.glmnet(as.matrix(x_stand), y, #this function requires x to be a matrix
+                      alpha = 0, nfolds = 10, type.measure = 'mse', standardise = F) #,
+                      #lambda = exp(seq(-4, 5, length.out = 100))) #Default lambda range doesn't cover minimum
+
+# Make predictions
+predictions_ridge <- predict(ridge_cv, newx = x_stand_test, s = "lambda.min")
+rmse_value_ridge <- rmse(y_test, predictions_ridge)
+#print(rmse_value_ridge)
+
+
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+#Lasso - L1
+
+#Apply 10-fold CV - L1
+set.seed(123)
+lasso_cv <- cv.glmnet(as.matrix(x_stand), y, #this function requires x to be a matrix
+                      alpha = 1, nfolds = 10, type.measure = 'mse', standardise = T)
+
+#TEST PREDICTIONS
+predictions_lasso <- predict(lasso_cv, newx = x_stand_test, s = "lambda.min")
+rmse_value_lasso <- rmse(y_test, predictions_lasso)
+#print(rmse_value_lasso)
+
+
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+#ELASTIC NET - combination of L1 and l2 (ridge and lasso) 
+
+#Apply 10-fold CV - L1
+set.seed(123)
+elastic_cv <- cv.glmnet(as.matrix(x_stand), y, #this function requires x to be a matrix
+                      alpha = 0.5, nfolds = 10, type.measure = 'mse', standardise = T)
+
+#TEST RMSE PREDICTIONS
+predictions_elastic <- predict(elastic_cv, newx = x_stand_test, s = "lambda.min")
+rmse_value_elastic <- rmse(y_test, predictions_elastic)
+#print(rmse_value_elastic)
+
+
+```
+
+$$\underline{\textbf{Linear Model with Variable Selection/Regularisation Applied}}$$
+
+The aim of this exercise is response prediction, not variable interpretation.
+Thus, all explanatory variables, including sex, were standardized for both the training and test data, equalising the scales of all predictors.
+
+In order to find the most accurately performing linear model with variable selection and regularisation, the hyperparameters alpha (relative weight of the penalties for ridge and lasso) and lambda (strength of the regularisation) were tuned.
+It allows the model to find the optimal combination that forms a regularised linear model that most accurately predicts the UPDRS and thus has the lowest RMSE.
+The tuning utilised a grid containing a multitude of alpha values between 0 and 1, and 100 lambda values between $10^{-4}$ and $10^{5}$.
+
+The model also utilised 10-fold cross validation to prevent the model from overfitting to the training data when selecting the optimal hyperparameters for the model.
+
+```{r grid_regularisation, echo = FALSE, message = FALSE, warning = FALSE}
+
+# LINEAR MODEL _ REGULARISATION with GRID
+
+alpha_values <- seq(0, 1, by = 0.001) 
+lambda_values <- 10^(seq(-4, 5,length.out = 100)) #by = 0.5
+grid <- expand.grid(alpha = alpha_values, lambda = lambda_values)
+
+train_control <- trainControl("cv", number = 10) # 10-fold CV
+grid <- expand.grid(alpha=alpha_values, lambda=lambda_values)
+
+set.seed(123)
+# model_reg <- train(
+#   x_stand, y,
+#   method = "glmnet",
+#   tuneGrid = grid,
+#   trControl = train_control
+#)
+
+#save(model_reg, file = 'data\\model_reg.Rdata')
+load('data\\model_reg.Rdata')
+
+# Best tuned model
+#print(model_reg$bestTune) 
+#bestTuneBy001<- model_reg$bestTune
+results <- model_reg$results
+
+# RMSE - TEST DATA
+predictions_reg <- predict(model_reg, newdata = test_stand)
+test_rmse_grid <- sqrt(mean((test_stand$total_UPDRS - predictions_reg)^2))
+#print(test_rmse_grid)
+
+
+
+```
+
+```{r load_lm, echo = FALSE, message = FALSE, warning = FALSE}
+
+# kable(model_reg$bestTune)
+```
+
+```{r lm_rmse_comparison, echo = FALSE, message = FALSE, warning = FALSE, fig.cap= "Root Mean Square Error (RMSE) for different Linear Model and their Corresponding Regularisations"}
+
+all_lm_rmse <- (cbind(test_rmse_vanilla, rmse_value_ridge, test_rmse_grid, rmse_value_elastic, rmse_value_lasso))
+new_col <- c("Unregularised Model", "Ridge ($\\alpha=0$)", "Grid Search Best Model ($\\alpha=0.002$)", "Elastic Net ($\\alpha=0.5$)", "Lasso ($\\alpha=1$)")
+kable(round(all_lm_rmse,4), align = c( "c", "c", "c", "c", "c"), col.names = new_col, caption = "Comparison of RMSE Across Differnt Linear Models")
+```
+
+As seen in the table, the linear model produced with the grid search performed best as it had the lowest RMSE value (of $10.893$), though only marginally.
+Thus, the best linear model with regularisation had the hyperparameters: $\alpha = 0.002$ and $\lambda = 0.231$.
+This $\alpha$ value is very small - alsmost $0$ and thus, very close to a ridge regression.
+
+Ridge regression, and regularisation, was first developed to handle data with highly correlated explanatory variables.
+As previously discussed, the Parkinson's data is highly correlated, indicating a model with a form regularisation may be useful.Ridge regression gradually decays the coefficients (slow shrinkage), where as lasso performs variable selection by shrinking the coefficients to zero.
+In this case, the linear model performs best through approximately a ridge regression, though it does have some aspects of lasso.
+\vspace{5mm}
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 9, fig.height= 4, fig.cap="Coefficient profiles for the Linear Model with $\\alpha = 0$"}
+# Regularisation
+
+library(glmnet)
+set.seed(123)
+ridge_elastic_stand <- glmnet(x_stand, y, alpha = 0.002, standardize = T,
+                lambda = 10^(seq(-4, 5,length.out = 100)))
+                
+plot(ridge_elastic_stand, xvar = 'lambda', label = T)
+```
+
+The illlustration above shows how the coefficients change as log lambda increases.
+The numbers labelled at the top indicate the amount of non-zero coefficiets, and because the number decreases it indicates this regularisation performs some variable selection, much like a Lasso model.
+Further, this is unlike Ridge which undergoes no variable selection, though it does gradually decay to zero which is an aspect of Ridge.
+Thus, it can be argued the chosen Linear Model has is a type of elastic net and is a combination of ridge and lasso.
+
+\pagebreak
+
+```{r linear_plot, echo = FALSE, message = FALSE, warning = FALSE, fig.width =9, fig.height=4 , fig.cap= "10-fold CV MSEs as a function of log($\\lambda$) for the Linear Model with $\\alpha = 0.002$"}
+
+library(ggplot2)
+
+# par(mfrow = c(1,2))
+set.seed(123)
+par(mar=c(4,4,2,2))
+new_reg_cv <- cv.glmnet(as.matrix(x_stand), y, 
+                      alpha = 0.002, nfolds = 10, type.measure = 'mse', standardise = T, 
+                      lambda = 10^(seq(-4, 5,length.out = 100)))
+
+{
+plot(new_reg_cv)
+abline(h = new_reg_cv$cvup[which.min(new_reg_cv$cvm)], lty = 2)
+}
+
+
+```
+
+This figure illustrates the tuning parameter, $\lambda$, yields the minimum CV error (red dots) when $\lambda= 0.231$.
+
+```{r knn, echo = FALSE, message = FALSE, warning = FALSE}
+# KNN - Motivating choice for K
+library(caret)
+
+# knn only has one hyperparameter: k, can see with getModelInfo()$knn$parameters
+grid_knn <- expand.grid(k = 3:15) 
+
+#CV procedure
+ctrl_knn <-  trainControl(method = 'repeatedcv', number = 10, repeats = 10)
+
+set.seed(123)
+# knn_cv <- train(total_UPDRS ~.,
+#                 data = train_stand, #they just used train but i think must use standardised
+#                 method = 'knn', 
+#                 trControl = ctrl_knn,
+#                 tuneGrid = grid_knn)
+# 
+
+#save(knn_cv, file = 'data\\knn_cv.Rdata')
+load('data\\knn_cv.Rdata')
+
+best_k <- knn_cv$bestTune$k
+
+# Print the results
+#print(best_k) # 5 is the best 
+
+# RMSE =  predicted values vs actuals
+test_predictions_knn <- predict(knn_cv, newdata = test_stand)
+test_actuals <- test_stand$total_UPDRS
+test_rmse_knn <- sqrt(mean((test_predictions_knn - test_actuals)^2))
+
+#print(test_rmse_knn)
+
+```
+
+$$\underline{\textbf{K-Nearest Neighbours (KNN)}}$$
+
+KNN models require the explanatory variables to be standardized as it is a distance based model.
+KNN forms new observations based on predicted values formed when it chooses and groups the ‘K’ closest points, and uses them to predict a value that forms a new observation.
+
+Thus, the distance between points is affected by the scales of the variables.
+Standardization ensures all explanatory factors contribute equally to the distance measurements.
+
+The hyperparameter associated with KNN is number of neighbours, K, the model chooses to examine.
+K is user-defined.
+For very low values of K (e.g. K = 1), the model tends to overfit to the training data as fits to its noise and outliers.
+This will lead to a higher error rate (e.g. the RMSE) on the test set as its ‘test’ response predictions are less accurate (large error between predicted and actual values for UPDRS).
+
+```{r knn_plot, echo = FALSE, message = FALSE, warning = FALSE, fig.height = 4, fig.width= 9, fig.cap = "Repeated CV results for KNN" }
+
+plot(knn_cv, xlab = "Number of Neighbours (K)")
+
+```
+
+The figure above indicates the KNN model with the lowest corresponding RMSE according to the CV procedure, is one where its hyperparameter is $K = 5$.
+As K decreases, the model flexibility increases.
+Thus, for any $K < 5$ the model will overfit to the data, though the cross-validation procedure helps prevents this from occurring.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# A random forest. Briefly explain the hyperparameter selection process and report variable importance.
+library(randomForest)
+
+# Now bagged model (special case of random forest with m = p)
+mybag <- randomForest(total_UPDRS ~., data = train, mtry = 18)
+
+# Bagging
+set.seed(123)
+bag_250_time <- system.time(
+  first_bag <- randomForest(total_UPDRS ~ ., data = train,
+                            mtry = ncol(train) - 1, #Use all features (minus response) #### m = p
+                            ntree = 500,
+                            importance = T,         #Keep track of importance (faster without)
+                            #do.trace = 25,         #Can keep track of progress if we want
+                            na.action = na.exclude)
+)
+
+#save(first_bag, file = 'data\\first_bag.Rdata')
+load('data\\first_bag.Rdata')
+
+# Random Forest
+# We have established that bagging reduces the sampling variability of predictions by averaging over many trees. 
+# However, if the trees are highly correlated, this improvement will be limited.
+# Therefore, the stronger the correlation, the greater the variance of the average.
+# Suppose set of Random Variables X1,.... Xn with common variance sigma ^2 are not independent, , such that there is some non-zero correlation.
+######## - Show earlier plot were Variables are HIGHLY CORRELATED
+# Random forests provide an improvement over bagged trees by making a small change that decorrelates the trees.
+
+set.seed(123)
+# rf_250_time <- system.time(
+#   first_rf <- randomForest(total_UPDRS ~ ., data = train,
+#                            ntree = 500,
+#                            importance = T,
+#                            na.action = na.exclude)
+# )
+
+#save(first_rf, file = 'data\\first_rf.Rdata')
+load('data\\first_rf.Rdata')
+
+# Predict on test data using the bagged model
+test_predictions_bag <- predict(mybag, newdata=test)
+
+actuals <- test$total_UPDRS
+rmse_bag <- sqrt(mean((test_predictions_bag - actuals)^2))
+
+# Print the RMSE for the bagged model
+#print(rmse_bag)
+
+# Predict on test data using the random forest model
+test_predictions_rf <- predict(first_rf, newdata=test)
+rmse_rf <- sqrt(mean((test_predictions_rf - actuals)^2))
+#print(rmse_rf)
+
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+library(ranger)
+
+#for m = p 
+set.seed(123)
+# ranger_time <- system.time(
+#   ranger_bag <- ranger(formula = total_UPDRS ~ ., data = train,
+#                        num.trees = 500, mtry = ncol(train) - 1)
+# )
+
+#save(ranger_bag, file = 'data\\ranger_bag.Rdata')
+load('data\\ranger_bag.Rdata')
+
+#head(treeInfo(ranger_bag, 100))
+
+# Predict on test data using the bagged model
+test_predictions_ranger <- predict(ranger_bag, data = test)$predictions
+actuals_ranger <- test$total_UPDRS
+rmse_ranger <- sqrt(mean((test_predictions_ranger - actuals_ranger)^2))
+
+#print(rmse_ranger)
+
+
+```
+
+$$\underline{\textbf{Random Forest}}$$
+
+Random Forest is an ensemble modelling technique that reaches a final output by constructing multiple decision trees, a 'forest', and combining their results.
+Random Forest combats the weakness of high sampling variability found in decision trees.
+This weakness is a result of how Decision Trees are prone to overfitting to the training data.
+Random Forest is a more robust method and avoids overfitting by having a marginal difference in the way it trains each of its trees.
+Additionally, standardisation was not necessary because ensemble techniques like Bagging, Boosting and Random Forest are not sensitive to the magnitude of explanatory variables.
+
+The tuned RF model utilised the 'ranger' and 'train' functions to best select the optimal hyperparameters.
+The first hyperparameter is 'mtry', indicating the number of random variables at each split that are to be randomly sampled candidates.
+The default is a third of the variables but the tuned model used a grid that move between 10 and 18 (the number of predictors).
+Next is 'splitrule' which controls how nodes are split in the trees.
+The tuned model used "variance" as the splitting rule.
+Lastly, 'min.node.size' indicates the smallest size of a node.
+The default is 5 and the tuned model moves between 1 and 10.
+\*The number of trees is not considered a hyperparameter in 'ranger', however the chosen amount for each model was 500.
+
+To prevent overfitting when parameter tuning for RF, the trained model was controlled using the "out-of-bag (OOB)" error method.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+library(caret)
+# Hyperparameter Grid Search - Ranger - Random Forest
+# Create combinations of hyperparameters
+# getModelInfo()$ranger$parameters
+
+# q3_rf_grid <- expand.grid(mtry = 10:(ncol(train) - 1),
+#                              splitrule = 'variance',      #Must specify. This is RSS for regression
+#                              min.node.size = c(1:10))  #Default for regression is 5. Controls tree size
+# 
+# ranger_ctrl <- trainControl(method = 'oob', verboseIter = F)     #Can set to T to track progress
+# 
+# # Ranger
+# set.seed(123)
+# ranger_time_grid <- system.time(
+#   q3_rf_gridsearch <- train(total_UPDRS ~ .,
+#                              data = train,
+#                              method = 'ranger',
+#                              num.trees = 500, # c(125, 250, 500, 1000),
+#                              #verbose = T,
+#                             importance = 'impurity',
+#                              trControl = ranger_ctrl,
+#                              tuneGrid = q3_rf_grid)    #Here is the grid
+# 
+# )
+
+#save(q3_rf_gridsearch, file = 'data\\q3_rf_gridsearch.Rdata')
+load('data\\q3_rf_gridsearch.Rdata')
+
+q3_rf <- q3_rf_gridsearch$finalModel 
+
+# Best model's parameters
+q3_rf_best_tune <- q3_rf_gridsearch$bestTune
+
+# Test Predictions
+actuals_rf_grid <- test$total_UPDRS
+q3_rfgrid_pred <- predict(q3_rf_gridsearch, newdata = test)
+mse_q3_rf <- mean((actuals_rf_grid - q3_rfgrid_pred)^2)
+rmse_q3_rf <- sqrt(mse_q3_rf)
+#print(rmse_q3_rf)
+
+
+```
+
+```{r predicting on Q3testing,echo=FALSE}
+q3test<-read.csv("Q3testing.csv")
+q3testpreds<-data.frame(predict(q3_rf_gridsearch, newdata = q3test))
+names(q3testpreds)<-NULL
+write.csv(q3testpreds,file="Q3testing_predictions.csv", row.names = FALSE)
+
+```
+
+```{r rf_rmse_table, echo = FALSE, message = FALSE, warning = FALSE, fig.cap="Root Mean Square Error (RMSE) for different Random Forest Models"}
+
+all_rf_rmse <- (round(cbind(rmse_bag, rmse_rf, rmse_ranger, rmse_q3_rf),4))
+new_col_rf <- c("Bagging Model", "Standard RF Model", "RF using Ranger Model", "Ranger with Grid Search Model")
+kable(all_rf_rmse, align = c( "c", "c", "c", "c"), col.names = new_col_rf, caption = "Comparison of RMSE Across Differnt Random Forest Models")
+
+```
+
+The table above depicts the RF model with the lowest RMSE (most accurate response predictions) was the RF model utilising a grid to tune its hyperparameters.
+It is important to note that though it had the lowest RMSE, 3.1936, it is still very close to the Bagging Model and the RF using 'ranger' without a tuning grid.
+This is largely because the grid-tuned model, like the Bagging and Ranger, also had its hyperparameter 'mtry' equal eighteen (the total number of predictors).
+
+```{r rf_variable_importance, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 8, fig.height = 4.5, fig.cap= "Variable Importance Plot for Grid Search RF model"}
+
+q3_rf <- q3_rf_gridsearch$finalModel 
+par(mar=c(4,4,1,1))
+rf_imp <- ranger::importance(q3_rf, type = 1) 
+rf_imp_order <- sort(rf_imp, decreasing = FALSE)
+barplot(rf_imp_order, horiz = T, col = 'navy', las = 1,
+        xlab = 'Mean decrease in MSE')
+
+
+```
+
+\pagebreak
+
+As seen in the plot above, the explanatory variable with the most significant effect on the model's RMSE (and subsequently its predictions) is age as it has the longest corresponding bar.
+Thus, age produced the greatest average reduction in the RMSE.
+Age is then followed by DFA and sex respectively, in terms of its impact on the model, however age by far has the greatest influence and variable importance.
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+set.seed(123)
+
+#Q3_gbm_grid <- expand.grid(n.trees = seq(500, 6000, 500), #c(1000, 5000),
+#                               interaction.depth = c(1:5), #c(1, 2, 5), #max tree depth
+#                               shrinkage = c(0.01, 0.001),
+#                                n.minobsinnode = 10)
+# ctrl_gbm <- trainControl(method = 'cv', number = 10, verboseIter = T)
+# 
+# gbm_time_grid <- system.time(
+#   q3_gbm_gridsearch <- train(total_UPDRS ~ ., data = train,
+#                                method = 'gbm',
+#                                distribution = 'gaussian',
+#                                trControl = ctrl_gbm,
+#                                verbose = T,
+#                                tuneGrid = Q3_gbm_grid)
+# )
+
+#save(q3_gbm_gridsearch, file = 'data\\gbm_q3.Rdata')
+
+load('data\\gbm_Q3.Rdata')
+
+
+# Best model's parameters
+q3_gbm_best_tune <- q3_gbm_gridsearch$bestTune
+
+# Predict on test data using the GBM model
+test_gbm_predictions <- predict(q3_gbm_gridsearch, newdata=test)
+
+# Calculate the RMSE for the GBM model
+actuals_gbm <- test$total_UPDRS
+rmse_gbm <- sqrt(mean((test_gbm_predictions - actuals_gbm)^2))
+
+# Print the RMSE for the GBM model
+#print(rmse_gbm)
+
+
+
+```
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+set.seed(123)
+
+# q3_gbm_grid_1 <- expand.grid(n.trees = seq(1000, 9000, 1000), #c(1000, 5000),
+#                                interaction.depth = c(1, 2, 5), #c(1, 2, 5), #max tree depth
+#                                shrinkage = c(0.01, 0.001),
+#                                n.minobsinnode = 10)
+# ctrl_gbm_1 <- trainControl(method = 'cv', number = 10, verboseIter = T)
+# 
+# gbm_time_grid_1 <- system.time(
+#   q3_gbm_gridsearch_1 <- train(total_UPDRS ~ ., data = train,
+#                                method = 'gbm',
+#                                distribution = 'gaussian',
+#                                trControl = ctrl_gbm_1,
+#                                verbose = T,
+#                              tuneGrid = q3_gbm_grid_1)
+# )
+
+#save(q3_gbm_gridsearch_1, file = 'data\\gbm_q3_1.Rdata')
+
+load('data\\gbm_q3_1.Rdata')
+
+
+# Best model's parameters
+q3_gbm_best_tune_1 <- q3_gbm_gridsearch_1$bestTune
+
+# Predict on test data using the GBM model
+test_gbm_predictions_1 <- predict(q3_gbm_gridsearch_1, newdata=test)
+
+# Calculate the RMSE for the GBM model
+actuals_gbm <- test$total_UPDRS
+rmse_gbm_1 <- sqrt(mean((test_gbm_predictions_1 - actuals_gbm)^2))
+
+# Print the RMSE for the GBM model
+#print(rmse_gbm_1)
+
+
+
+```
+
+$$\underline{\textbf{Boosted Tree Model}}$$
+
+Gradient Boosting is another ensemble technique like Random Forest; however it has a higher accuracy because the algorithm is formed to progressively learn from its mistakes.
+Gradient Boosting optimises its ensemble by using gradient descent.
+
+The Gradient Boosted models also undergo tuning to best select the optimal hyperparameters.
+These hyperparameters are tuned by creating a Gradient Boosting Machine (GBM) tuning grid.
+The first hyperparameter is 'n.trees', representing the total amount of trees to fit.
+Increasing the number of trees to fit will minimise the RMSE, however it also increases the computational time.
+In this case, models tuned the number between 500 and 9000.
+
+Next is 'interaction.depth' which is the depth of the individual trees (number of splits in each tree).
+This controls the complexity of the model.
+The depth was tuned between 1 and 5.
+The learning rate is the 'shrinkage' hyperparameter and this controls the speed at which the model moves through the gradient descent.
+the smaller the shrinkage means the chance of overfitting is reduced, however this also increases the time to find the fit.
+Tuning was between 0.001 and 0.01.
+Lastly, 'n.minobsinnode' indicates the minimum number of observations that must be in a node in order for a split to occur which is also used to prevent overfitting, this was set to 10.
+
+Additionally, XGBoost is variation of a boosted model and has an additional hyperparameter, 'subsample', which controls the proportion of sampled training data used in each boosting round to grow trees (without replacement).
+It's aim is to prevent the model from overfitting by introducing randomness.
+This was set to 1.
+Otherwise, 'XGBoost' has equivalent hyperparameters to 'GBM'.
+
+\vspace{5mm}
+
+```{r gbm_variable_importance, echo = FALSE, warning=FALSE, fig.width = 9, fig.height = 5, message=FALSE, fig.cap= "Variable Importance for the Gradient Boosted Model"}
+library(gbm)
+q3_gbm <- q3_gbm_gridsearch_1$finalModel 
+
+#d <- gbm.perf(q3_gbm)
+
+par(mar=c(5,6,4,1) + 0.1)
+q3_gbm_varimp <- summary(q3_gbm, n.trees = 9000, las = 1, xlim = c(0, 50))
+
+```
+
+The relative influence of the variables in the boosted model remain fairly similar to their relative influence in the Random Forest Model.
+This is likely due to variable importance being measured in the same way - it monitors how the loss function reduces on average from splitting each variable.
+This plot reaffirms age is the most important feature for predicting the response (contributes the largest reduction), followed by the DFA and sex variables.
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.width = 9, fig.height = 4, fig.cap= "Graph displaying the Relationship Between the Average Cross-Validated RMSE and the Number of Trees"}
+# Get the results from the train object
+results <- q3_gbm_gridsearch_1$results
+library(dplyr)
+library(ggplot2)
+
+# Rmse average per number of trees
+rmse_ntrees <- results |>
+  group_by(n.trees) |>
+  summarise(rmse_av = mean(RMSE))
+
+# Plot rmse vs trees
+ggplot(data = rmse_ntrees, aes(x = n.trees, y = rmse_av)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = " Average Cross-Validated RMSE vs Number of Trees",
+       x = "Number of Trees",
+       y = "RMSE (average)")
+
+
+
+```
+
+The figure above illustrates how increasing the number of trees in the gradient boosting model (using 'gbm'), the RMSE decreases.
+Thus, the response predictions increase in accuracy.
+
+```{r xgb_model, echo = FALSE, warning=FALSE, message=FALSE}
+#getModelInfo()$xgbTree$parameters
+
+# q3_xgb_grid <- expand.grid(nrounds = c(750), c(500) #number of trees
+#                               max_depth = c(6, 8),               #interaction depth
+#                               eta = c(0.01, 0.005),              #learning rate
+#                                gamma = 0.001,                     #mindev
+#                                colsample_bytree = c(1, 0.5),      #proportion random features per tree
+#                                min_child_weight = 1,              #also controls tree depth
+#                                subsample = 1)                     #bootstrap proportion
+# 
+# ctrl_xgb <-  trainControl(method = 'cv', number = 5, verboseIter = T)
+# 
+# xgb_time_grid <- system.time(
+#  # q3_xgb_gridsearch <- train(total_UPDRS ~ ., data = train,
+#                               method = 'xgbTree',
+#                                trControl = ctrl_xgb,
+#                                verbose = F,
+#                               tuneGrid = q3_xgb_grid)
+# )
+# 
+# save(q3_xgb_gridsearch, file = 'data\\q3_xgb_gridsearch.Rdata')
+suppressWarnings(
+  load('data\\q3_xgb_gridsearch_1.Rdata'))
+
+# Best model's parameters
+suppressWarnings(q3_xgb_best_tune_1 <- q3_xgb_gridsearch_1$bestTune)
+
+#Predict on test data using the GBM model
+suppressWarnings(test_xgb_predictions_1 <- predict(q3_xgb_gridsearch_1, newdata=test))
+
+# Calculate the RMSE for the GBM model
+suppressWarnings(actuals_xgb <- test$total_UPDRS)
+suppressWarnings(rmse_xgb_1 <- sqrt(mean((test_xgb_predictions_1 - actuals_xgb)^2)))
+
+# Print the RMSE for the GBM model
+#print(rmse_xgb_1)
+
+
+
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+suppressWarnings(load('data\\q3_xgb_gridsearch_2.Rdata'))
+
+#XGB where nrounds = 750
+# Best model's parameters
+suppressWarnings(q3_xgb_best_tune_2 <- q3_xgb_gridsearch_2$bestTune)
+
+#Predict on test data using the GBM model
+suppressWarnings(test_xgb_predictions_2 <- predict(q3_xgb_gridsearch_2, newdata=test))
+
+# Calculate the RMSE for the GBM model
+suppressWarnings(actuals_xgb <- test$total_UPDRS)
+suppressWarnings(rmse_xgb_2 <- sqrt(mean((test_xgb_predictions_2 - actuals_xgb)^2)))
+
+# Print the RMSE for the GBM model
+#print(rmse_xgb_2)
+```
+
+```{r boost_rmse_table, echo = FALSE, message = FALSE, warning = FALSE, fig.cap="Root Mean Square Error (RMSE) for different Boosted Models"}
+
+all_gbm_rmse <- (round(cbind(rmse_gbm, rmse_gbm_1, rmse_xgb_1, rmse_xgb_2),4))
+new_col_gbm <- c("GBM (6000 trees)", "GBM (9000 trees)", "XGB (500 trees)", "XGB (750 trees)")
+kable(all_gbm_rmse, align = c( "c", "c", "c", "c"), col.names = new_col_gbm, caption = "Comparison of RMSE Across Differnt Boosted Models")
+
+```
+
+The table above indicates (along with Figure 14), how increasing the number of trees for a 'gbm' model improves its predictive accuracy as the RMSE decreases.
+However, though XGBoost operates similarly, increasing the number of trees did not implicitly decrease the RMSE.
+This illustrates how it is Boosted Models can be difficult to tune.
+
+```{r Final_rmse_table, echo = FALSE, message = FALSE, warning = FALSE, fig.cap="Root Mean Square Error (RMSE) Across Different Models"}
+
+total_rmse <- (round(cbind(test_rmse_grid, test_rmse_knn, rmse_q3_rf, rmse_xgb_1),4))
+new_col_total <- c("Linear Model with Regularisation", "KNN Model", "Random Forest Model", "Boosted Model")
+kable(total_rmse, align = c( "c", "c", "c"), col.names = new_col_total, caption = "Comparison of RMSE Across Differnt Models")
+
+```
+
+The table above illustrates the RMSE values on test (out-of-sample) data for each of the best performing models within their respective model types.
+The linear model with regularisation predicted the response, UPDRS, with the least accuracy as it has the largest RMSE value.
+The KNN model performed much better than the Linear model, however not as well as the others.
+Based purely on the RMSE value, the Random Forest Model (RF) performed the best as it has the lowest RMSE (3.1936).
+However, it is important to note the boosted model's RMSE value is only marginally higher (only by 0.0381).
+Thus, deciding between the RF and Boosted Model to perform on unseen data is not clear cut.
+It is important to consider other factors.
+
+Firstly, the RF model requires far less carefully tuned hyperparameters and take far less training time than XGBoost models.
+This is because RF are built in parallel, which is faster than boosted models being built sequentially.
+Therefore, choosing RF is more practical because it already performs well and now there is the benefit of less computational time and effort.
+Moreover, XGBoost is more prone to overfitting compared to RF when the models are not regularised properly and this is compounded by the fact that it is already more difficult to tune XGBoost carefully.
+Additionally, through RF, one can look at the relative importance of each explanatory variable across all trees, this is not as straightfoward in boosted models.
+
+While it is important to also note that that XGBoost often out-performs Random Forest models on predictive performances and accuracy, ultimately, the Random Forest model was chosen because they easier to tune, take less computational time and are more robust to noise.
+
+Other possible RF weaknesses are that they are not as good as XGBoost at handling both larger datasets and data with high dimensionality and the parkinson dataset is quite large.
+Also, if the Random Forest model was not properly tuned and has too many deep trees it could be too complex and have overfit to the training data.
+
+Additionally, to strengthen the conviction on the choice of model and better decide which performs best, it would be beneficial to conduct further evaluations like performing error analyses and examining other error metrics.
+
+\vspace{5mm}
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 8, fig.height = 4, fig.cap= "Random Forest Predicted Total UPDRS Compared to the Observed Total UPDRS for Out-Of-Sample Data"}
+
+library(ggplot2)
+
+actuals <- test$total_UPDRS
+predicted <- predict(q3_rf_gridsearch, newdata = test)
+residuals <- actuals - predicted
+
+# Actual vs Predicted Plot
+ggplot() + 
+  geom_point(aes(x=actuals, y=predicted), alpha=0.3) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  labs(x="Actual Total UPDRS Scores", y="Predicted Total UPDRS Scores", title="Actual vs Predicted Total UPDRS Scores") +
+  theme_minimal()
+
+```
+
+The figure illustrates how the points mostly lie fairly close to the diagonal line, indicating moderately accurate predictions, for along that line the actual score matches its predicted counterpart.
+The density of points along the line is quite strongly concentrated (seen by darker shadings), implying those points were better fit.
+All points above the line indicate the model over predicted those values and all below were under predicted and those values appear relatively equal in volume.
+
+\pagebreak
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 8, fig.height = 3.8, fig.cap= "Relationship of residuals with the Predicted Total UPDRS for the Random Forest Model on Out-Of-Sample Data"}
+
+# Residuals Plot
+ggplot() + 
+  geom_point(aes(x=predicted, y=residuals), alpha=0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(x="Predicted UPDRS Scores", y="Residuals", title="The Residuals vs ThePredicted UPDRS Scores") +
+  theme_minimal()
+
+```
+
+The figure above illustrates no large fluctuations in the residuals for different values of the Predicted UPDRS score.
+Thus, this roughly uniform scatter indicates homoscedasticity in the model as there are no significant changes or patterns across the predicted values (randomness in the scatter).
+This consistent variance of the residuals suggests the model is reliable.
+\vspace{5mm}
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 8, fig.height = 3.5, fig.cap= "Histogram of the Residuals for the Random Forest Model on Out-Of-Sample Data"}
+# Histogram of Residuals
+library(e1071)
+std_dev <- sd(residuals)
+kurt <- kurtosis(residuals)
+skew <- skewness(residuals)
+
+
+ggplot() + 
+  geom_histogram(aes(x=residuals), binwidth=1, fill="forestgreen", alpha=0.7) +
+  labs(x="Residuals", y="Frequency", title="Histogram of Residuals") +
+  theme_minimal()
+```
+
+The residuals are centered around zero, suggesting the model does not have a significant bias and is neither systematically over or under predicting the UPDRS scores.
+The skewness is almost zero though slightly negative at 0.005, indicating it is mostly symmetrical.
+This all indicates the residuals are reasonably behaved and the model is mostly reliable.
+
+\pagebreak
+
+## Appendix
+
+### (1)
+
+```{r HomogeneityCheck,warning=FALSE,message=FALSE}
+#Getting the frame from the tree
+tree_frame<-vanilla_mielies$frame
+#Extracting or the terminal nodes
+leaves<-tree_frame[tree_frame$var=="<leaf>",]
+num_term_nodes<-nrow(leaves)
+#Looking at the information for each terminal node
+leafinfo<-leaves$yval2 
+pure<-all(leafinfo[,6:9]==0 | leafinfo[,6:9]==1) #Checks the proportion of each class and if all our 
+                                                #leaves only have 0's or 1's then every leaf is homogeneous
+```
+
+### (2)
+
+```{r tau}
+      ##Here we use the threshold as our decision rule and then calculate
+      #the recall using the caret packages confusionMatrix() function
+      pred_enet<-ifelse(pred_enet>=threshold,1,0)
+      pred_enet<-as.factor(pred_enet)
+      threshold<-round(threshold,3)
+      
+      caretmat<-confusionMatrix(as.factor(pred_enet),as.factor(q2_test[,1]),positive="1")
+      caretmat$byClass[1]
+```
